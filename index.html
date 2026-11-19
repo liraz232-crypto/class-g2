@@ -172,11 +172,12 @@ a.wa svg{width:15px;height:15px;flex:none}
 <div class="wrap">
   <header>
     <div class="mark">
-      <div class="bubble b1" aria-hidden="true">ג</div>
-      <h1>כיתה <span>ג׳2</span></h1>
+      <div class="bubble b1" aria-hidden="true" id="gradeLetter">ג</div>
+      <h1>כיתה <span id="gradeName">ג׳2</span></h1>
       <div class="bubble b2" aria-hidden="true">2</div>
     </div>
     <p class="sub">אירועים, מבחנים ודף קשר להורי הכיתה</p>
+    <p class="sub" id="schoolYear">שנת הלימודים תשפ״ז · ⁦2026–2027⁩</p>
     <div class="dots" aria-hidden="true"></div>
   </header>
 
@@ -268,6 +269,9 @@ a.wa svg{width:15px;height:15px;flex:none}
       <div id="clist" style="display:grid;gap:8px"><div class="loading">טוען את דף הקשר…</div></div>
     </section>
 
+    <div class="btns" style="justify-content:center;margin-top:18px">
+      <button class="btn b-ghost" type="button" id="inviteCopy">העתקת קישור כניסה להורים</button>
+    </div>
     <p class="foot">לחיצה על המספר פותחת שיחת וואטסאפ ישירה</p>
   </div>
 </div>
@@ -294,6 +298,36 @@ function rel(n) {
   return 'עבר';
 }
 function pad(n) { return (n < 10 ? '0' : '') + n; }
+
+// ---------- class promotion by school year (Israel date) ----------
+// The class moves up on 1 September at 00:00 Israel time. The last row stays in force forever (class ו׳).
+var GRADES = [
+  { from: '0000-01-01', grade: 'ג', year: 'תשפ״ז', years: '2026–2027' },
+  { from: '2027-09-01', grade: 'ד', year: 'תשפ״ח', years: '2027–2028' },
+  { from: '2028-09-01', grade: 'ה', year: 'תשפ״ט', years: '2028–2029' },
+  { from: '2029-09-01', grade: 'ו', year: 'תש״ץ', years: '2029–2030' }
+];
+function israelToday() {            // 'YYYY-MM-DD' in Asia/Jerusalem
+  try {
+    var o = {};
+    new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jerusalem', year: 'numeric', month: '2-digit', day: '2-digit' })
+      .formatToParts(new Date()).forEach(function (x) { o[x.type] = x.value; });
+    if (o.year && o.month && o.day) return o.year + '-' + o.month + '-' + o.day;
+  } catch (e) {}
+  var n = new Date();                // very old phones: device date
+  return n.getFullYear() + '-' + pad(n.getMonth() + 1) + '-' + pad(n.getDate());
+}
+function applyGrade() {
+  var t = israelToday(), g = GRADES[0];
+  GRADES.forEach(function (x) { if (t >= x.from) g = x; });
+  var name = g.grade + '׳2';
+  document.title = 'כיתה ' + name;
+  $('gradeLetter').textContent = g.grade;
+  $('gradeName').textContent = name;
+  $('schoolYear').textContent = 'שנת הלימודים ' + g.year + ' · \u2066' + g.years + '\u2069';
+}
+applyGrade();
+document.addEventListener('visibilitychange', function () { if (!document.hidden) applyGrade(); });
 var WA_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2Zm0 18.2a8.2 8.2 0 0 1-4.2-1.1l-.3-.2-3 .8.8-2.9-.2-.3A8.2 8.2 0 1 1 12 20.2Zm4.5-6.1c-.2-.1-1.5-.7-1.7-.8-.2-.1-.4-.1-.6.1l-.8 1c-.1.2-.3.2-.5.1a6.7 6.7 0 0 1-3.3-2.9c-.3-.4.3-.4.8-1.4.1-.2 0-.3 0-.4l-.8-1.8c-.2-.5-.4-.4-.6-.4h-.5a1 1 0 0 0-.7.3 3 3 0 0 0-.9 2.2 5.2 5.2 0 0 0 1.1 2.7 11.8 11.8 0 0 0 4.5 4c1.7.7 2.3.8 3.2.6.5-.1 1.5-.6 1.7-1.2.2-.6.2-1.1.2-1.2-.1-.1-.2-.2-.5-.3Z"/></svg>';
 
 // ---------- API ----------
@@ -401,7 +435,7 @@ function renderEvents() {
 }
 function loadEvents() {
   return apiGet('list').then(function (d) {
-    if (d.error === 'code') return lock('הקוד השתנה. הקלידו את הקוד החדש.');
+    if (d.error === 'code') return lock(badCodeMsg());
     store('g2code', CODE);
     EVENTS = (d.events || []).slice().sort(function (a, b) { return (a.date + a.time) < (b.date + b.time) ? -1 : 1; });
     renderEvents();
@@ -512,7 +546,7 @@ function loadContacts() {
   if (KIDS || contactsLoading) return; contactsLoading = true;
   apiGet('contacts').then(function (d) {
     contactsLoading = false;
-    if (d.error === 'code') return lock('הקוד השתנה. הקלידו את הקוד החדש.');
+    if (d.error === 'code') return lock(badCodeMsg());
     KIDS = (d.contacts || []).slice().sort(function (a, b) { return a.first.localeCompare(b.first, 'he') || a.last.localeCompare(b.last, 'he'); });
     renderContacts();
   }).catch(function () {
@@ -539,6 +573,28 @@ document.querySelectorAll('.tab').forEach(function (t) {
 window.addEventListener('hashchange', function () { show(location.hash.slice(1)); });
 
 // ---------- gate + boot ----------
+// ---------- class code: cleaning, link, invite ----------
+// removes invisible direction marks (LRM/RLM, embeddings, isolates), zero-width chars and all whitespace
+function cleanCode(s) { return String(s || '').replace(/[\u200B-\u200F\u202A-\u202E\u2060-\u2069\uFEFF\s]/g, ''); }
+var codeSource = '';   // 'link' | 'stored' | 'typed'
+function badCodeMsg() {
+  return codeSource === 'link' ? 'הקישור לא תקין. בקשו קישור חדש בקבוצת ההורים.' : 'הקוד השתנה. הקלידו את הקוד החדש.';
+}
+function inviteLink() { return location.origin + location.pathname + '?k=' + encodeURIComponent(CODE); }
+$('inviteCopy').addEventListener('click', function () {
+  var u = inviteLink(), b = $('inviteCopy');
+  function done() { b.textContent = 'הקישור הועתק ✓'; setTimeout(function () { b.textContent = 'העתקת קישור כניסה להורים'; }, 2000); }
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(u).then(done, function () { prompt('העתיקו את הקישור:', u); });
+  else prompt('העתיקו את הקישור:', u);
+});
+// reads ?k=… and also #k=… / #events?k=… / #events&k=… ; returns {code, tab}
+function codeFromUrl() {
+  var code = new URLSearchParams(location.search).get('k') || '';
+  var h = location.hash.slice(1), tab = h, m = h.match(/(?:^|[?&])k=([^&]*)/);
+  if (m) { if (!code) { try { code = decodeURIComponent(m[1]); } catch (e) { code = m[1]; } } tab = h.split(/[?&]/)[0]; if (/^k=/.test(tab)) tab = ''; }
+  return { code: cleanCode(code), raw: !!(code || m), tab: tab };
+}
+
 function lock(msg) {
   store('g2code', null); CODE = '';
   $('app').hidden = true; $('gate').hidden = false; $('gateMsg').className = 'msg err'; $('gateMsg').textContent = msg || '';
@@ -558,7 +614,8 @@ function tryCode(code) {
   }).catch(function () { $('gateMsg').className = 'msg err'; $('gateMsg').textContent = 'אין חיבור. נסו שוב.'; });
 }
 $('gateForm').addEventListener('submit', function (e) {
-  e.preventDefault(); var c = $('gateCode').value.trim(); if (!c) return;
+  e.preventDefault(); var c = cleanCode($('gateCode').value); if (!c) return;
+  codeSource = 'typed';
   $('gateMsg').className = 'msg'; $('gateMsg').textContent = 'בודק…'; tryCode(c);
 });
 
@@ -568,11 +625,13 @@ $('gateForm').addEventListener('submit', function (e) {
     $('gate').querySelector('p').textContent = 'האתר עדיין לא מחובר. צריך להדביק את כתובת ה-Apps Script בקובץ index.html (ראו SETUP.md).';
     return;
   }
-  var fromLink = new URLSearchParams(location.search).get('k');
-  if (fromLink) { try { history.replaceState(null, '', location.pathname + location.hash); } catch (e) {} }
-  var code = fromLink || store('g2code');
+  var u = codeFromUrl();
+  if (u.raw) { try { history.replaceState(null, '', location.pathname + (u.tab ? '#' + u.tab : '')); } catch (e) {} }
+  var stored = cleanCode(store('g2code'));
+  var code = u.code || stored;
+  codeSource = u.code ? 'link' : 'stored';
   if (code) { CODE = code; start(); }
-  else $('gate').hidden = false;
+  else { $('gate').hidden = false; if (u.raw) { $('gateMsg').className = 'msg err'; $('gateMsg').textContent = 'הקישור לא תקין. בקשו קישור חדש בקבוצת ההורים.'; } }
 })();
 </script>
 </body>
